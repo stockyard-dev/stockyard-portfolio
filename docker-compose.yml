@@ -1,0 +1,12 @@
+version: "3.8"
+services:
+  portfolio:
+    build: .
+    ports:
+      - "9808:9808"
+    volumes:
+      - portfolio_data:/data
+    environment:
+      - PORT=9808
+volumes:
+  portfolio_data:
