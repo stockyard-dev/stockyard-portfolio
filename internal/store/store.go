@@ -32,6 +32,7 @@ func Open(d string) (*DB, error) {
 	if err != nil { return nil, err }
 	db.SetMaxOpenConns(1)
 	db.Exec(`CREATE TABLE IF NOT EXISTS projects(id TEXT PRIMARY KEY, title TEXT NOT NULL, category TEXT DEFAULT '', client TEXT DEFAULT '', date TEXT DEFAULT '', description TEXT DEFAULT '', image_url TEXT DEFAULT '', project_url TEXT DEFAULT '', tags TEXT DEFAULT '', featured INTEGER DEFAULT 0, status TEXT DEFAULT '', created_at TEXT DEFAULT(datetime('now')))`)
+	db.Exec(`CREATE TABLE IF NOT EXISTS extras(resource TEXT NOT NULL, record_id TEXT NOT NULL, data TEXT NOT NULL DEFAULT '{}', PRIMARY KEY(resource, record_id))`)
 	return &DB{db: db}, nil
 }
 
@@ -92,4 +93,45 @@ func (d *DB) SearchProjects(q string, filters map[string]string) []Projects {
 	var o []Projects
 	for rows.Next() { var e Projects; rows.Scan(&e.ID, &e.Title, &e.Category, &e.Client, &e.Date, &e.Description, &e.ImageUrl, &e.ProjectUrl, &e.Tags, &e.Featured, &e.Status, &e.CreatedAt); o = append(o, e) }
 	return o
+}
+
+// GetExtras returns the JSON extras blob for a record. Returns "{}" if none.
+func (d *DB) GetExtras(resource, recordID string) string {
+	var data string
+	err := d.db.QueryRow(`SELECT data FROM extras WHERE resource=? AND record_id=?`, resource, recordID).Scan(&data)
+	if err != nil || data == "" {
+		return "{}"
+	}
+	return data
+}
+
+// SetExtras stores the JSON extras blob for a record.
+func (d *DB) SetExtras(resource, recordID, data string) error {
+	if data == "" {
+		data = "{}"
+	}
+	_, err := d.db.Exec(`INSERT INTO extras(resource, record_id, data) VALUES(?, ?, ?) ON CONFLICT(resource, record_id) DO UPDATE SET data=excluded.data`, resource, recordID, data)
+	return err
+}
+
+// DeleteExtras removes extras when a record is deleted.
+func (d *DB) DeleteExtras(resource, recordID string) error {
+	_, err := d.db.Exec(`DELETE FROM extras WHERE resource=? AND record_id=?`, resource, recordID)
+	return err
+}
+
+// AllExtras returns all extras for a resource type as a map of record_id → JSON string.
+func (d *DB) AllExtras(resource string) map[string]string {
+	out := make(map[string]string)
+	rows, _ := d.db.Query(`SELECT record_id, data FROM extras WHERE resource=?`, resource)
+	if rows == nil {
+		return out
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id, data string
+		rows.Scan(&id, &data)
+		out[id] = data
+	}
+	return out
 }
